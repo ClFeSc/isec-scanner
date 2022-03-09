@@ -1,0 +1,5 @@
+#!/bin/zsh
+
+set -e
+
+/home/kali/.local/bin/ghidra_10.1.2_PUBLIC_20220125/ghidra_10.1.2_PUBLIC/ghidraRun

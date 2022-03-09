@@ -1,0 +1,6 @@
+#!/bin/bash
+
+EXECS=$(ls -l ~/.local/isec/bin/.man | tail -n +2 | awk '{print $NF}')
+echo "$EXECS" | while read exe; do
+	echo -e "$exe - $(cat ~/.local/isec/bin/.man/$exe)"
+done | column -t -l 2 -d

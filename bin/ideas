@@ -1,0 +1,10 @@
+#!/bin/bash
+
+set -e
+
+echo "Some hints on what to do on a new machine:"
+echo "---"
+echo "Check the banner"
+echo "Check 'history'"
+echo "Check 'ip a'"
+echo "Run 'ls -lahsi ~ | grep --color 'flag\|isec\|$' && ls -lahsi / | grep --color 'flag\|isec\|$''"

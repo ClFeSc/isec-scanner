@@ -1,0 +1,3 @@
+#!/bin/bash
+
+ip -o -f inet addr show | awk '/scope global/ {print $4}' | grep -E "^10\."

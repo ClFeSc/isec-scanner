@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+
+echo "Some useful commands inside gdb:"
+echo "---"
+
+echo "layout asm 			- Show assembly code"
+echo "layout reg 			- Show register content"
+echo "quit 				- Leave gdb"
+echo "run 				- Start selected exe. Can include arguments"
+echo "set disassembly-flavor intel	- Use intel layout (i.e. mov rax,rbx)"
+echo "tui enable/tui disable 		- Enable/disable split view (note that split view is required for asm or reg but has some issues like with up key)"
+echo "Add more here..."

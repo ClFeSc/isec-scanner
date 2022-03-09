@@ -1,0 +1,3 @@
+#!/bin/bash
+
+sudo arp-scan -I eth0 $(myip)
