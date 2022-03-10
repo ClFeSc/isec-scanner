@@ -1,0 +1,4 @@
+#!/bin/bash
+
+test -d $1 && ls -lahis $1
+test -f $1 && cat $1
