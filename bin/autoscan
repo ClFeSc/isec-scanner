@@ -69,7 +69,7 @@ class Host:
 		
 def scan_networks():
 	progress = log.progress("Creating tmp file")
-	tmp = "/tmp/nmap_auto-isec"
+	tmp = "~/nmap_auto-isec"
 	os.system(f"touch {tmp}")
 	progress.success(f"Got `{tmp}`")
 	progress = log.progress("Getting IP...")
@@ -123,7 +123,7 @@ def arpscan_for_hosts(network):
 
 def nmap_for_hosts(network):
 	progress = log.progress("Creating tmp file")
-	tmp = "/tmp/nmap_auto-isec"
+	tmp = "~/nmap_auto-isec"
 	os.system(f"touch {tmp}")
 	progress.success(f"Got `{tmp}`")
 	progress = log.progress("Scanning with nmap for hosts...")
@@ -142,7 +142,7 @@ def nmap_for_hosts(network):
 
 def scan(ips):
 	progress = log.progress("Creating tmp file")
-	tmp = "/tmp/nmap_auto-isec"
+	tmp = "~/nmap_auto-isec"
 	os.system(f"touch {tmp}")
 	progress.success(f"Got `{tmp}`")
 	# progress = log.progress("Getting IP...")
@@ -173,7 +173,7 @@ def scan(ips):
 
 def scan_ipv6(ips):
 	progress = log.progress("Creating tmp file")
-	tmp = "/tmp/nmap_auto-isec.ipv6"
+	tmp = "~/nmap_auto-isec.ipv6"
 	os.system(f"touch {tmp}")
 	progress.success(f"Got `{tmp}`")
 	# progress = log.progress("Getting IP...")
@@ -287,7 +287,7 @@ def basic_find_ipv6_hosts(networks):
 		for i in range(256):
 			all_ipv6_to_test.append(f"{ipv6}{str(i)}")
 	progress = log.progress("Creating tmp file")
-	tmp = "/tmp/nmap_auto-isec.ipv6"
+	tmp = "~/nmap_auto-isec.ipv6"
 	os.system(f"touch {tmp}")
 	progress.success(f"Got `{tmp}`")
 	progress = log.progress("Scanning IPv6 addresses...")
