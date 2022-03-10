@@ -145,11 +145,42 @@ def scan(ips):
 	tmp = "/tmp/nmap_auto-isec"
 	os.system(f"touch {tmp}")
 	progress.success(f"Got `{tmp}`")
-	progress = log.progress("Getting IP...")
-	ip = process("myip").recvall().decode('utf-8').split('\n')[0]
-	progress.success(f"Your IP is {ip}")
+	# progress = log.progress("Getting IP...")
+	# ip = process("myip").recvall().decode('utf-8').split('\n')[0]
+	# progress.success(f"Your IP is {ip}")
 	progress = log.progress("Scanning...")
 	nmap = process(["nmap", "-A", "-Pn", "-oG", tmp] + ips)
+	scan_result = nmap.recvall()
+	progress.success(f"nmap result:\n{scan_result.decode('utf-8')}")
+	with open(tmp) as f:
+		grep_scan_result = f.readlines()
+	hosts = {}
+	for line in grep_scan_result:
+		if 'Status: Up' in line:
+			host = Host.from_string(line)
+			hosts[host.ip] = host
+		elif 'Ports: ' in line:
+			host = Host.from_string(line)
+			hosts[host.ip].set_ports(line)
+		elif 'OS: ' in line:
+			host = Host.from_string(line)
+			hosts[host.ip].set_os(line)
+	log.info('Found the following hosts and their metadata:')
+	for host in hosts.keys():
+		log.info(hosts[host].to_string())
+	return hosts
+
+
+def scan_ipv6(ips):
+	progress = log.progress("Creating tmp file")
+	tmp = "/tmp/nmap_auto-isec.ipv6"
+	os.system(f"touch {tmp}")
+	progress.success(f"Got `{tmp}`")
+	# progress = log.progress("Getting IP...")
+	# ip = process("myip").recvall().decode('utf-8').split('\n')[0]
+	# progress.success(f"Your IP is {ip}")
+	progress = log.progress("Scanning...")
+	nmap = process(["nmap", "-A", "-6", "-Pn", "-oG", tmp] + ips)
 	scan_result = nmap.recvall()
 	progress.success(f"nmap result:\n{scan_result.decode('utf-8')}")
 	with open(tmp) as f:
@@ -190,6 +221,7 @@ def evaluate_ssh(ssh_connection):
 	log_highlighting('ps e', ssh_connection.ps('e'), False)
 	log_highlighting('ls /flags', ssh_connection('test -d /flags && ls -lahsiR /flags'))
 	log_highlighting('ls /flag', ssh_connection('test -d /flag && ls -lahsiR /flag'))
+	log_highlighting('ls /root', ssh_connection('test -d /root && ls -lahsiR /root'))
 	# interactive = yesno("Do you want to open an interactive session?")
 	# if interactive:
 	# 	shell = ssh_connection.shell(shell=None, tty=True)
@@ -240,6 +272,35 @@ def try_ssh(hosts):
 		log.info(f"An error occured while trying ssh: `{ex}`")
 	finally:
 		return result
+		
+		
+def basic_find_ipv6_hosts(networks):
+	progress = log.progress("Finding IPv6 base...")
+	myipv6 = process(["myip-ipv6"])
+	ipv6 = myipv6.recvall().decode('utf-8').split('\n')[0].split("::")[0]
+	progress.success(f"Your IPv6 front part is {ipv6}.")
+	ipv4_networks = [ipv4.split(".")[2] for ipv4 in networks]
+	ipv6_networks = [f"{ipv6}:{ipv4}::" for ipv4 in ipv4_networks]
+	log.info(f"Testing the following IPv6 networks: {ipv6_networks}")
+	all_ipv6_to_test = []
+	for ipv6 in ipv6_networks:
+		for i in range(256):
+			all_ipv6_to_test.append(f"{ipv6}{str(i)}")
+	progress = log.progress("Creating tmp file")
+	tmp = "/tmp/nmap_auto-isec.ipv6"
+	os.system(f"touch {tmp}")
+	progress.success(f"Got `{tmp}`")
+	progress = log.progress("Scanning IPv6 addresses...")
+	nmap = process(["nmap", "-6", "-oG", tmp, "-sn"] + all_ipv6_to_test)
+	scan_result = nmap.recvall()
+	with open(tmp) as f:
+		grep_scan_result = f.readlines()
+	ipv6_hosts = []
+	for line in grep_scan_result:
+		if "Status: Up" in line:
+			ipv6_hosts.append(line.split(" ")[1])
+	progress.success(f"Found the following IPv6 hosts: {ipv6_hosts}")
+	return ipv6_hosts
 
 
 def main():
@@ -248,13 +309,17 @@ def main():
 	for network in networks:
 		hosts += find_hosts(network)
 	log.info(f"Found {len(hosts)} devices in total: {hosts}")
+	ipv6_hosts = basic_find_ipv6_hosts(networks)
 	hosts = scan(hosts)
-	ssh_results = try_ssh(hosts)
+	ipv6_hosts = scan_ipv6(ipv6_hosts)
+	ssh_results = try_ssh(hosts | ipv6_hosts)
 	if len(ssh_results) > 0:
 		log.info("Found the following SSH connections:")
+	else:
+		log.info("Found no SSH connections :(")
 	for ssh_result in ssh_results:
 		log.info(f"Found `{ssh_result[2]}`/`{ssh_result[3]}` on {ssh_result[0]}:{ssh_result[1]}.")
-	log.info('Scan completed')
+	log.info(f'Scan completed')
 
 
 if __name__ == '__main__':
