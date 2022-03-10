@@ -4,6 +4,7 @@
 from pwn import *
 from paramiko import ssh_exception
 import re
+import ipaddress
 
 COMMON_NAMES = ['root', 'notSecure', 'student', 'changeme']
 # COMMON_NAMES = ['kali']
@@ -66,21 +67,52 @@ class Host:
 		return host
 		
 		
+def scan_networks():
+	progress = log.progress("Creating tmp file")
+	tmp = "/tmp/nmap_auto-isec"
+	os.system(f"touch {tmp}")
+	progress.success(f"Got `{tmp}`")
+	progress = log.progress("Getting IP...")
+	ip = process("myip-no-sub").recvall().decode('utf-8').split('\n')[0]
+	progress.status(f"Your IP is {ip}")
+	ip = ip.replace('.0.', '.*.')
+	ip = re.sub("\.\d{1,3}$", ".1", ip)
+	progress.success(f"Your IP that will be used for network finding is {ip}")
+	progress = log.progress("Scanning for networks...")
+	nmap = process(["nmap", ip, "-sn", "-oG", tmp])
+	scan_result = nmap.recvall()
+	with open(tmp) as f:
+		grep_scan_result = f.readlines()
+	networks = []
+	for line in grep_scan_result:
+		if 'Status: Up' in line:
+			host = Host.from_string(line)
+			networks.append(f"{host.ip}/24")
+	progress.success(f"Found {len(networks)} networks: {networks}!")
+	return networks
+		
+		
 # Source: https://stackoverflow.com/a/2737863
 def ip_as_binary(ip):
 	return '.'.join([bin(int(x)+256)[3:] for x in ip.split('.')])
 
-def find_hosts():
+def find_hosts(network):
 	progress = log.progress("Scanning for network devices...")
-	hosts = nmap_for_hosts()
-	hosts += arpscan_for_hosts()
+	hosts = nmap_for_hosts(network)
+	hosts += arpscan_for_hosts(network)
 	hosts = sorted([ip for ip in list(set(hosts)) if re.search("^(\d{1,3}\.?){4}", ip)], key=ip_as_binary)
 	progress.success(f"Found {len(hosts)} hosts in total: {hosts}!")
 	return hosts
 	
 	
-def arpscan_for_hosts():
+def arpscan_for_hosts(network):
+	progress = log.progress("Getting IP...")
+	ip = process("myip-no-sub").recvall().decode('utf-8').split('\n')[0]
+	progress.success(f"Your IP is {ip}")
 	progress = log.progress("Scanning with arpscan for hosts...")
+	if ipaddress.ip_address(ip) not in ipaddress.ip_network(network.replace(".1/", ".0/")):
+		progress.failure("Cannot arpscan foreign network")
+		return []
 	arpscan = process(["sudo-arpscan-ip"])
 	arpscan_result = arpscan.recvall()
 	hosts = arpscan_result.decode('utf-8').split("\n")
@@ -89,17 +121,14 @@ def arpscan_for_hosts():
 
 
 
-def nmap_for_hosts():
+def nmap_for_hosts(network):
 	progress = log.progress("Creating tmp file")
 	tmp = "/tmp/nmap_auto-isec"
 	os.system(f"touch {tmp}")
 	progress.success(f"Got `{tmp}`")
-	progress = log.progress("Getting IP...")
-	ip = process("myip").recvall().decode('utf-8').split('\n')[0]
-	progress.success(f"Your IP is {ip}")
 	progress = log.progress("Scanning with nmap for hosts...")
 	# nmap = process(["nmap", "127.0.0.1", "-A", "-oG", tmp])
-	nmap = process(["nmap", ip, "-sn", "-oG", tmp])
+	nmap = process(["nmap", network, "-sn", "-oG", tmp])
 	scan_result = nmap.recvall()
 	with open(tmp) as f:
 		grep_scan_result = f.readlines()
@@ -214,7 +243,12 @@ def try_ssh(hosts):
 
 
 def main():
-	hosts = scan(find_hosts())
+	networks = scan_networks()
+	hosts = []
+	for network in networks:
+		hosts += find_hosts(network)
+	log.info(f"Found {len(hosts)} devices in total: {hosts}")
+	hosts = scan(hosts)
 	ssh_results = try_ssh(hosts)
 	if len(ssh_results) > 0:
 		log.info("Found the following SSH connections:")
