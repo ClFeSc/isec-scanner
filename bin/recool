@@ -1,0 +1,3 @@
+#!/bin/bash
+
+sudo python3 ~/.local/I-Sec-Recool/recool.py -I eth0 --nplan-path ~/go/bin/nplan
